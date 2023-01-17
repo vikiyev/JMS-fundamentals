@@ -436,3 +436,154 @@ Using JMS 2.0, it is even easier to send a message.
       Patient patientReceived = jmsContext.createConsumer(queue).receiveBody(Patient.class);
 			System.out.println(patientReceived);
 ```
+
+### Asynchronous Processing
+
+Whenever there is a message in the queue, the JMS provider will automatically invoke the **MessageListener.onMessage()** method. In the use case, the ClinicalsApp class sends an object message with the patient information
+
+```java
+public class ClinicalsApp {
+	public static void main(String[] args) throws NamingException, JMSException {
+		InitialContext initialContext = new InitialContext();
+		Queue requestQueue = (Queue) initialContext.lookup("queue/requestQueue");
+
+		try (ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory();
+				JMSContext jmsContext = cf.createContext()) {
+			JMSProducer producer = jmsContext.createProducer();
+
+			Patient patient = new Patient();
+			ObjectMessage objectMessage = jmsContext.createObjectMessage(patient);
+			patient.setId(123);
+			patient.setName("doge");
+			patient.setInsuranceProvider("dogeInsurance");
+			patient.setCopay(30d);
+			patient.setAmountToBePaid(100d);
+
+      // send object message
+			objectMessage.setObject(patient);
+			producer.send(requestQueue, objectMessage);
+		}
+	}
+}
+```
+
+The EligibilityChecker app will set up a listener that implements MessageListener and processes the business logic before sending a response back.
+
+```java
+public class EligibilityChecker {
+	public static void main(String[] args) throws NamingException {
+		InitialContext initialContext = new InitialContext();
+		Queue requestQueue = (Queue) initialContext.lookup("queue/requestQueue");
+
+		try (ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory();
+				JMSContext jmsContext = cf.createContext()) {
+			JMSConsumer consumer = jmsContext.createConsumer(requestQueue);
+			// listen for messages async
+			consumer.setMessageListener(new EligibilityCheckListener());
+      Thread.sleep(10000);
+		}
+	}
+}
+```
+
+```java
+public class EligibilityCheckListener implements MessageListener {
+	@Override
+	public void onMessage(Message message) {
+		// typecast to an ObjectMessage
+		ObjectMessage objectMessage = (ObjectMessage) message;
+		try (ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory();
+				JMSContext jmsContext = cf.createContext()) {
+			InitialContext initialContext = new InitialContext();
+			Queue replyQueue = (Queue) initialContext.lookup("queue/replyQueue");
+			MapMessage replyMessage = jmsContext.createMapMessage();
+			Patient patient = (Patient) objectMessage.getObject();
+
+			// business logic
+			String insuranceProvider = patient.getInsuranceProvider();
+			if (insuranceProvider.equals("dogeInsurance") || insuranceProvider.equals("cateInsurance")) {
+				if (patient.getCopay()< 40 && patient.getAmountToBePaid() < 1000) {
+					// eligible for the clinical service
+					replyMessage.setBoolean("eligible", true);
+				} else {
+					replyMessage.setBoolean("eligible", false);
+				}
+			}
+
+			// send reply back
+			JMSProducer producer = jmsContext.createProducer();
+			producer.send(replyQueue, replyMessage);
+
+		} catch (JMSException e) {
+			e.printStackTrace();
+		} catch (NamingException e) {
+			e.printStackTrace();
+		}
+	}
+}
+```
+
+We can then process the response in the ClinicalApp
+
+```java
+			// process the response
+			JMSConsumer consumer = jmsContext.createConsumer(replyQueue);
+			MapMessage replyMessage = (MapMessage) consumer.receive(10000);
+			System.out.println("Patient eligibility is " + replyMessage.getBoolean("eligible"));
+```
+
+We run EligibilityChecker then ClinicalsApp. It will output
+
+```
+Patient eligibility is true
+```
+
+### Load Balancing
+
+To demonstrate load balancing, we can send 10 messages from the ClinicalApp
+
+```java
+			JMSProducer producer = jmsContext.createProducer();
+
+			Patient patient = new Patient();
+			ObjectMessage objectMessage = jmsContext.createObjectMessage(patient);
+			patient.setId(123);
+			patient.setName("doge");
+			patient.setInsuranceProvider("dogeInsurance");
+			patient.setCopay(30d);
+			patient.setAmountToBePaid(100d);
+
+			// send object message
+			objectMessage.setObject(patient);
+
+			for (int i = 0; i < 10; i++) {
+				producer.send(requestQueue, objectMessage);
+			}
+```
+
+In the eligibility checker, we use a for loop that iterates 5 times
+
+```java
+			JMSConsumer consumer1 = jmsContext.createConsumer(requestQueue);
+			JMSConsumer consumer2 = jmsContext.createConsumer(requestQueue);
+
+			for (int i = 0; i < 10; i+=2) { // using two consumers, iterate 5 times
+				System.out.println("Consumer 1: " + consumer1.receive());
+				System.out.println("Consumer 2: " + consumer2.receive());
+			}
+```
+
+It will output the following:
+
+```
+Consumer 1: ActiveMQMessage[ID:6f4be12c-96a4-11ed-9c43-d8f88325b949]:PERSISTENT/ClientMessageImpl[messageID=440, durable=true, address=requestQueue,userID=6f4be12c-96a4-11ed-9c43-d8f88325b949,properties=TypedProperties[__AMQ_CID=6f43f1e9-96a4-11ed-9c43-d8f88325b949,_AMQ_ROUTING_TYPE=1]]
+Consumer 2: ActiveMQMessage[ID:6f4d19ad-96a4-11ed-9c43-d8f88325b949]:PERSISTENT/ClientMessageImpl[messageID=441, durable=true, address=requestQueue,userID=6f4d19ad-96a4-11ed-9c43-d8f88325b949,properties=TypedProperties[__AMQ_CID=6f43f1e9-96a4-11ed-9c43-d8f88325b949,_AMQ_ROUTING_TYPE=1]]
+Consumer 1: ActiveMQMessage[ID:6f4d8ede-96a4-11ed-9c43-d8f88325b949]:PERSISTENT/ClientMessageImpl[messageID=442, durable=true, address=requestQueue,userID=6f4d8ede-96a4-11ed-9c43-d8f88325b949,properties=TypedProperties[__AMQ_CID=6f43f1e9-96a4-11ed-9c43-d8f88325b949,_AMQ_ROUTING_TYPE=1]]
+Consumer 2: ActiveMQMessage[ID:6f4e040f-96a4-11ed-9c43-d8f88325b949]:PERSISTENT/ClientMessageImpl[messageID=443, durable=true, address=requestQueue,userID=6f4e040f-96a4-11ed-9c43-d8f88325b949,properties=TypedProperties[__AMQ_CID=6f43f1e9-96a4-11ed-9c43-d8f88325b949,_AMQ_ROUTING_TYPE=1]]
+Consumer 1: ActiveMQMessage[ID:6f4e5230-96a4-11ed-9c43-d8f88325b949]:PERSISTENT/ClientMessageImpl[messageID=444, durable=true, address=requestQueue,userID=6f4e5230-96a4-11ed-9c43-d8f88325b949,properties=TypedProperties[__AMQ_CID=6f43f1e9-96a4-11ed-9c43-d8f88325b949,_AMQ_ROUTING_TYPE=1]]
+Consumer 2: ActiveMQMessage[ID:6f4eee71-96a4-11ed-9c43-d8f88325b949]:PERSISTENT/ClientMessageImpl[messageID=445, durable=true, address=requestQueue,userID=6f4eee71-96a4-11ed-9c43-d8f88325b949,properties=TypedProperties[__AMQ_CID=6f43f1e9-96a4-11ed-9c43-d8f88325b949,_AMQ_ROUTING_TYPE=1]]
+Consumer 1: ActiveMQMessage[ID:6f4f63a2-96a4-11ed-9c43-d8f88325b949]:PERSISTENT/ClientMessageImpl[messageID=446, durable=true, address=requestQueue,userID=6f4f63a2-96a4-11ed-9c43-d8f88325b949,properties=TypedProperties[__AMQ_CID=6f43f1e9-96a4-11ed-9c43-d8f88325b949,_AMQ_ROUTING_TYPE=1]]
+Consumer 2: ActiveMQMessage[ID:6f4fb1c3-96a4-11ed-9c43-d8f88325b949]:PERSISTENT/ClientMessageImpl[messageID=447, durable=true, address=requestQueue,userID=6f4fb1c3-96a4-11ed-9c43-d8f88325b949,properties=TypedProperties[__AMQ_CID=6f43f1e9-96a4-11ed-9c43-d8f88325b949,_AMQ_ROUTING_TYPE=1]]
+Consumer 1: ActiveMQMessage[ID:6f5026f4-96a4-11ed-9c43-d8f88325b949]:PERSISTENT/ClientMessageImpl[messageID=448, durable=true, address=requestQueue,userID=6f5026f4-96a4-11ed-9c43-d8f88325b949,properties=TypedProperties[__AMQ_CID=6f43f1e9-96a4-11ed-9c43-d8f88325b949,_AMQ_ROUTING_TYPE=1]]
+Consumer 2: ActiveMQMessage[ID:6f50c335-96a4-11ed-9c43-d8f88325b949]:PERSISTENT/ClientMessageImpl[messageID=450, durable=true, address=requestQueue,userID=6f50c335-96a4-11ed-9c43-d8f88325b949,properties=TypedProperties[__AMQ_CID=6f43f1e9-96a4-11ed-9c43-d8f88325b949,_AMQ_ROUTING_TYPE=1]]
+```
