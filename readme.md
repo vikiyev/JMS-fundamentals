@@ -31,6 +31,10 @@ Based on Bharath Thippireddy's Udemy course [JMS Fundamentals](https://www.udemy
   - [Message Filtering](#message-filtering)
     - [Header Filtering](#header-filtering)
   - [Guaranteed Messaging](#guaranteed-messaging)
+    - [AUTO\_ACKNOWLEDGE](#auto_acknowledge)
+    - [DUPS\_OK\_ACKNOWLEDGE](#dups_ok_acknowledge)
+    - [CLIENT\_ACKNOWLEDGE](#client_acknowledge)
+  - [JMS Transactions](#jms-transactions)
 
 ## Installing the Broker
 
@@ -768,3 +772,56 @@ JMSConsumer consumer = jmsContext.createConsumer(claimQueue, "doctorType IN ('Ba
 ```
 
 ## Guaranteed Messaging
+
+JMS ensures message delivery through message acknowledgements that is established between client runtime and JMS server, which are both parts of the provider. The acknowledgement mode can be set on the JMSContext. There are three acknowledgement modes:
+
+1. **AUTO_ACKNOWLEDGE**
+2. **CLIENT_ACKNOWLEDGE**
+3. **DUPS_OK_ACKNOWLEDGE**
+
+### AUTO_ACKNOWLEDGE
+
+In AUTO_ACKNOWLEDGE, a message is delivered once and only once. The acknowledgement happens internally automatically. The provider (artemis) knows that the message is consumed and will automatically acknowledge the producer.
+
+```java
+public class MessageProducer {
+	public static void main(String[] args) throws NamingException, JMSException {
+		InitialContext initialContext = new InitialContext();
+		Queue requestQueue = (Queue) initialContext.lookup("queue/requestQueue");
+
+		try (ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory();
+				JMSContext jmsContext = cf.createContext(JMSContext.AUTO_ACKNOWLEDGE)) {
+			JMSProducer producer = jmsContext.createProducer();
+			producer.send(requestQueue, "Message 1");
+		}
+	}
+}
+```
+
+### DUPS_OK_ACKNOWLEDGE
+
+The JMS provider is allowed to send a particular message more than once to the same consumer. The JMS server does not need to worry about duplication of messages, and the message is sent any number of times until it is delivered. The consumer can use the JMSMessageID header to deal with duplicates. The downside with this acknowledgement mode is performance overhead.
+
+### CLIENT_ACKNOWLEDGE
+
+The JMS Consumer completely takes control of acknowledgement. It has to explicitly send an acknowledgement. If a message is not acknowledged by the consumer, it will be retained on the queue. The advantage is that the JMS Server would not be blocked while waiting for acknowledgement from the consumer.
+
+```java
+public class MessageConsumer {
+	public static void main(String[] args) throws NamingException, JMSException {
+		InitialContext initialContext = new InitialContext();
+		Queue requestQueue = (Queue) initialContext.lookup("queue/requestQueue");
+
+		try (ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory();
+				JMSContext jmsContext = cf.createContext(JMSContext.CLIENT_ACKNOWLEDGE)) {
+
+			JMSConsumer consumer = jmsContext.createConsumer(requestQueue);
+			TextMessage message = (TextMessage) consumer.receive();
+			System.out.println(message.getText());
+			message.acknowledge();
+		}
+	}
+}
+```
+
+## JMS Transactions
