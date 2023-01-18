@@ -35,6 +35,7 @@ Based on Bharath Thippireddy's Udemy course [JMS Fundamentals](https://www.udemy
     - [DUPS\_OK\_ACKNOWLEDGE](#dups_ok_acknowledge)
     - [CLIENT\_ACKNOWLEDGE](#client_acknowledge)
   - [JMS Transactions](#jms-transactions)
+  - [Security](#security)
 
 ## Installing the Broker
 
@@ -845,4 +846,80 @@ public class MessageProducer {
 		}
 	}
 }
+```
+
+## Security
+
+Artemis provides users, roles and wildcard based security configurations, which are located in the broker `etc/` directory. The important files used for security are:
+
+1. artemis-user.properties
+2. artemis-roles.properties
+3. broker.xml
+
+We can create users and roles in the artemis-user and artemis-roles files.
+
+```properties
+clinicaluser = clinicalpass
+eligibilityuser = eligibilitypass
+
+///
+
+clinicalrole = clinicaluser
+eligibilityrole = eligibilityuser
+```
+
+We then configure the security in the broker.xml file. We can create a pattern for the queue name in our jndi properties to make it easier to select in the matcher.
+
+```xml
+      <security-settings>
+        <security-setting match="demiglace.queues.request.#">
+            <permission type="createNonDurableQueue" roles="clinicalrole,eligibilityrole"/>
+            <permission type="deleteNonDurableQueue" roles="clinicalrole,eligibilityrole"/>
+            <permission type="createDurableQueue" roles="clinicalrole,eligibilityrole"/>
+            <permission type="deleteDurableQueue" roles="clinicalrole,eligibilityrole"/>
+            <permission type="createAddress" roles="clinicalrole,eligibilityrole"/>
+            <permission type="deleteAddress" roles="clinicalrole,eligibilityrole"/>
+            <permission type="consume" roles="eligibilityrole"/>
+            <permission type="browse" roles="clinicalrole"/>
+            <permission type="send" roles="clinicalrole"/>
+            <!-- we need this otherwise ./artemis data imp wouldn't work -->
+            <permission type="manage" roles="amq"/>
+         </security-setting>
+          <security-setting match="demiglace.queues.reply.#">
+            <permission type="createNonDurableQueue" roles="eligibilityrole"/>
+            <permission type="deleteNonDurableQueue" roles="eligibilityrole"/>
+            <permission type="createDurableQueue" roles="eligibilityrole"/>
+            <permission type="deleteDurableQueue" roles="eligibilityrole"/>
+            <permission type="createAddress" roles="eligibilityrole"/>
+            <permission type="deleteAddress" roles="eligibilityrole"/>
+            <permission type="consume" roles="clinicalrole"/>
+            <permission type="browse" roles="eligibilityrole"/>
+            <permission type="send" roles="eligibilityrole"/>
+            <!-- we need this otherwise ./artemis data imp wouldn't work -->
+            <permission type="manage" roles="amq"/>
+         </security-setting>
+         <security-setting match="#">
+            <permission type="createNonDurableQueue" roles="amq"/>
+            <permission type="deleteNonDurableQueue" roles="amq"/>
+            <permission type="createDurableQueue" roles="amq"/>
+            <permission type="deleteDurableQueue" roles="amq"/>
+            <permission type="createAddress" roles="amq"/>
+            <permission type="deleteAddress" roles="amq"/>
+            <permission type="consume" roles="amq"/>
+            <permission type="browse" roles="amq"/>
+            <permission type="send" roles="amq"/>
+            <!-- we need this otherwise ./artemis data imp wouldn't work -->
+            <permission type="manage" roles="amq"/>
+         </security-setting>
+      </security-settings>
+```
+
+We then need to define the username and password when creating the JMSContext
+
+```java
+try (ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory();
+				JMSContext jmsContext = cf.createContext("eligibilityuser", "eligibilitypass")) {
+
+try (ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory();
+				JMSContext jmsContext = cf.createContext("clinicaluser", "clinicalpass")) {
 ```
