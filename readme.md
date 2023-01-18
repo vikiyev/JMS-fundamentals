@@ -2,6 +2,33 @@
 
 Based on Bharath Thippireddy's Udemy course [JMS Fundamentals](https://www.udemy.com/course/java-message-service-jms-fundamentals/)
 
+- [JMS Fundamentals](#jms-fundamentals)
+  - [Installing the Broker](#installing-the-broker)
+  - [Terminologies](#terminologies)
+    - [Messaging](#messaging)
+    - [Messaging Server](#messaging-server)
+    - [JMS Models](#jms-models)
+      - [Point to Point (p2p)](#point-to-point-p2p)
+      - [PubSub](#pubsub)
+    - [Session](#session)
+  - [JMS 1.x API](#jms-1x-api)
+    - [Booting up the Project](#booting-up-the-project)
+    - [Writing Messages to the Queue](#writing-messages-to-the-queue)
+    - [PubSub](#pubsub-1)
+  - [JMS 2.0](#jms-20)
+  - [JMS Message Anatomy](#jms-message-anatomy)
+    - [Message Priority](#message-priority)
+    - [replyTo Header](#replyto-header)
+    - [Linking a Request to a Reply](#linking-a-request-to-a-reply)
+    - [Expiry Time](#expiry-time)
+    - [Adding Custom Message Properties](#adding-custom-message-properties)
+    - [Message Types](#message-types)
+    - [Asynchronous Processing](#asynchronous-processing)
+    - [Load Balancing](#load-balancing)
+  - [PubSub Messaging](#pubsub-messaging)
+    - [Durable Subscription](#durable-subscription)
+    - [Shared Subscription](#shared-subscription)
+
 ## Installing the Broker
 
 After Apache ActiveMQ Artemis is downloaded, we run `artemis create pathTo/mybroker`. To run the broker, use `artemis run`. This starts the broker at port 8161. The etc/broker.xml is the configuration file.
@@ -586,4 +613,90 @@ Consumer 1: ActiveMQMessage[ID:6f4f63a2-96a4-11ed-9c43-d8f88325b949]:PERSISTENT/
 Consumer 2: ActiveMQMessage[ID:6f4fb1c3-96a4-11ed-9c43-d8f88325b949]:PERSISTENT/ClientMessageImpl[messageID=447, durable=true, address=requestQueue,userID=6f4fb1c3-96a4-11ed-9c43-d8f88325b949,properties=TypedProperties[__AMQ_CID=6f43f1e9-96a4-11ed-9c43-d8f88325b949,_AMQ_ROUTING_TYPE=1]]
 Consumer 1: ActiveMQMessage[ID:6f5026f4-96a4-11ed-9c43-d8f88325b949]:PERSISTENT/ClientMessageImpl[messageID=448, durable=true, address=requestQueue,userID=6f5026f4-96a4-11ed-9c43-d8f88325b949,properties=TypedProperties[__AMQ_CID=6f43f1e9-96a4-11ed-9c43-d8f88325b949,_AMQ_ROUTING_TYPE=1]]
 Consumer 2: ActiveMQMessage[ID:6f50c335-96a4-11ed-9c43-d8f88325b949]:PERSISTENT/ClientMessageImpl[messageID=450, durable=true, address=requestQueue,userID=6f50c335-96a4-11ed-9c43-d8f88325b949,properties=TypedProperties[__AMQ_CID=6f43f1e9-96a4-11ed-9c43-d8f88325b949,_AMQ_ROUTING_TYPE=1]]
+```
+
+## PubSub Messaging
+
+Pub/Sub is used when we want to broadcast a message across applications. We can publish a message using a JMSContext.Producer's **send()** method wherein we pass the topic.
+
+```java
+		try (ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory();
+				JMSContext jmsContext = cf.createContext()) {
+
+				Employee employee = new Employee();
+				employee.setId(123);
+				employee.setFirstName("Doge");
+				employee.setLastName("Cate");
+				employee.setEmail("Doge@doge.com");
+				employee.setDesignation("CEO");
+				employee.setPhone("123456");
+
+				// publish message
+				jmsContext.createProducer().send(topic, employee);
+				System.out.println("Message sent");
+			}
+```
+
+Subscribers can subscribe to the topic and consume messages.
+
+```java
+		try (ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory();
+				JMSContext jmsContext = cf.createContext()) {
+				// create consumer
+				JMSConsumer consumer = jmsContext.createConsumer(topic);
+				// consume message
+				Message message = consumer.receive();
+				Employee employee = message.getBody(Employee.class);
+				System.out.println(employee.getFirstName());
+			}
+```
+
+### Durable Subscription
+
+When using pubsub, the producer sends a message to the topic and that message will be sent out by the provider to all subscribers. In the event that a subscriber goes down while the message is being received on the topic, we can use **Durable Subscriptions** wherein we pass a unique Client ID and a Subscription Name.
+
+```java
+		try (ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory();
+				JMSContext jmsContext = cf.createContext()) {
+				// durable subscription
+				jmsContext.setClientID("securityApp");
+				// create durable consumer
+				JMSConsumer consumer = jmsContext.createDurableConsumer(topic, "subscription1");
+				consumer.close(); // simulate application downtime
+				Thread.sleep(10000);
+				consumer = jmsContext.createDurableConsumer(topic, "subscription1"); // simulate app restart
+
+				// consume message
+				Message message = consumer.receive();
+				Employee employee = message.getBody(Employee.class);
+				System.out.println(employee.getFirstName());
+
+				consumer.close();
+				jmsContext.unsubscribe("subscription1");
+			}
+```
+
+### Shared Subscription
+
+A shared consumer can be used to read messages in parallel.
+
+```java
+		try (ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory();
+				JMSContext jmsContext = cf.createContext()) {
+			// create shared consumer
+			JMSConsumer consumer = jmsContext.createSharedConsumer(topic, "sharedConsumer");
+			JMSConsumer consumer2 = jmsContext.createSharedConsumer(topic, "sharedConsumer");
+
+			for (int i = 0; i < 10; i += 2) {
+				// consume message
+				Message message = consumer.receive();
+				Employee employee = message.getBody(Employee.class);
+				System.out.println("Consumer 1 " + employee.getFirstName());
+
+				Message message2 = consumer2.receive();
+				Employee employee2 = message.getBody(Employee.class);
+				System.out.println("Consumer 2 " + employee2.getFirstName());
+			}
+
+		}
 ```
