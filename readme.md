@@ -5,6 +5,7 @@ Based on Bharath Thippireddy's Udemy course [JMS Fundamentals](https://www.udemy
 - [JMS Fundamentals](#jms-fundamentals)
   - [Installing the Broker](#installing-the-broker)
   - [WildFly installation](#wildfly-installation)
+  - [Spring JMS](#spring-jms)
   - [Terminologies](#terminologies)
     - [Messaging](#messaging)
     - [Messaging Server](#messaging-server)
@@ -73,6 +74,54 @@ To check if the queue was successfully created:
 
 ```bash
 /subsystem=messaging-activemq/server=default/jms-queue=myQueue:read-resource
+```
+
+## Spring JMS
+
+Spring introduces the JmsTemplate class which have methods for sending and receiving messages, without us needing to define connection factories and sessions. For this project, the required Spring Boot dependency is Spring for Apache ActiveMQ Artemis. To enable JMS support on a Spring Boot app, we just need to annotate the entrypoint with **@EnableJms**
+
+```java
+@SpringBootApplication
+@EnableJms
+public class SpringjmsApplication {
+	public static void main(String[] args) {
+		SpringApplication.run(SpringjmsApplication.class, args);
+	}
+}
+```
+
+We configure the queue name in application.properties, which we can inject using **@Value**
+
+```
+springjms.myQueue=myQueue
+```
+
+```java
+@Component
+public class MessageSender {
+	@Autowired
+	private JmsTemplate jmsTemplate;
+
+	@Value("${springjms.myQueue}")
+	private String queue;
+
+	public void send(String message) {
+		jmsTemplate.convertAndSend(queue, message);
+	}
+}
+```
+
+Creating a listener can be done by annotating a method with **@JmsListener**
+
+```java
+@Component
+public class MyListener {
+
+	@JmsListener(destination = "${springjms.myQueue}")
+	public void receive(String message) {
+		System.out.println("Message received " + message);
+	}
+}
 ```
 
 ## Terminologies
