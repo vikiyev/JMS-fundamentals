@@ -28,6 +28,9 @@ Based on Bharath Thippireddy's Udemy course [JMS Fundamentals](https://www.udemy
   - [PubSub Messaging](#pubsub-messaging)
     - [Durable Subscription](#durable-subscription)
     - [Shared Subscription](#shared-subscription)
+  - [Message Filtering](#message-filtering)
+    - [Header Filtering](#header-filtering)
+  - [Guaranteed Messaging](#guaranteed-messaging)
 
 ## Installing the Broker
 
@@ -700,3 +703,68 @@ A shared consumer can be used to read messages in parallel.
 
 		}
 ```
+
+## Message Filtering
+
+Filters can be applied on messages to add conditions for consumers to consume a message. Filters only works on message properties and headers and not the payload. It is the producer's responsibility to set the headers which should be filtered on. Filters can be applied on the following headers:
+
+- JMSDeliveryMode
+- JMSPriority
+- JMSMessageID
+- JMSCorrelationID
+- JMSType
+
+We can set a SQL filtering string on the **JMSContext.createConsumer()** property. We first need to set a property on the message based on what we want to filter out the message.
+
+```java
+		try (ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory();
+				JMSContext jmsContext = cf.createContext()) {
+			// producer
+			JMSProducer producer = jmsContext.createProducer();
+			ObjectMessage objectMessage = jmsContext.createObjectMessage();
+
+			Claim claim = new Claim();
+			claim.setHospitalId(123);
+			claim.setDoctorName("Doge");
+			claim.setClaimAmount(1000);
+			claim.setDoctorType("Vet");
+			claim.setInsuranceProvider("DogeInsurance");
+			objectMessage.setObject(claim);
+			// set property to be filtered
+			objectMessage.setIntProperty("hospitalId", 123);
+
+			producer.send(claimQueue, objectMessage);
+
+			// consumer
+			JMSConsumer consumer = jmsContext.createConsumer(claimQueue, "hospitalId=123");
+			Claim receiveBody = consumer.receiveBody(Claim.class);
+			System.out.println(receiveBody.getClaimAmount());
+		}
+```
+
+There are also other operators such as BETWEEN, LIKE, IN.
+
+```java
+			objectMessage.setObject(claim);
+			// set property to be filtered
+			// objectMessage.setIntProperty("hospitalId", 123);
+			// objectMessage.setDoubleProperty("claimAmount", 1000);
+			// objectMessage.setStringProperty("doctorName", "Doge");
+			objectMessage.setStringProperty("doctorType", "Vet");
+
+			producer.send(claimQueue, objectMessage);
+
+			// consumer
+			// JMSConsumer consumer = jmsContext.createConsumer(claimQueue, "hospitalId=123");
+			// JMSConsumer consumer = jmsContext.createConsumer(claimQueue, "claimAmount BETWEEN 1000 AND 5000");
+			// JMSConsumer consumer = jmsContext.createConsumer(claimQueue, "doctorName LIKE 'D%'");
+			JMSConsumer consumer = jmsContext.createConsumer(claimQueue, "doctorType IN ('Vet', 'Feeder')");
+```
+
+### Header Filtering
+
+```java
+JMSConsumer consumer = jmsContext.createConsumer(claimQueue, "doctorType IN ('Barker', 'Feeder') OR JMSPriority BETWEEN 3 and 6");
+```
+
+## Guaranteed Messaging
