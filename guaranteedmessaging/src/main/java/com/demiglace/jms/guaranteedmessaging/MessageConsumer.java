@@ -22,12 +22,12 @@ public class MessageConsumer {
 		Queue requestQueue = (Queue) initialContext.lookup("queue/requestQueue");
 
 		try (ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory();
-				JMSContext jmsContext = cf.createContext(JMSContext.CLIENT_ACKNOWLEDGE)) {
+				JMSContext jmsContext = cf.createContext(JMSContext.SESSION_TRANSACTED)) {
 			
 			JMSConsumer consumer = jmsContext.createConsumer(requestQueue);
 			TextMessage message = (TextMessage) consumer.receive();
 			System.out.println(message.getText());
-			message.acknowledge();
+			jmsContext.commit();
 		}
 	}
 }

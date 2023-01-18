@@ -16,14 +16,18 @@ import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
 
 // sends the message
 public class MessageProducer {
-	public static void main(String[] args) throws NamingException, JMSException {
+	public static void main(String[] args) throws NamingException, JMSException, InterruptedException {
 		InitialContext initialContext = new InitialContext();
 		Queue requestQueue = (Queue) initialContext.lookup("queue/requestQueue");
 
 		try (ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory();
-				JMSContext jmsContext = cf.createContext(JMSContext.DUPS_OK_ACKNOWLEDGE)) {
+				JMSContext jmsContext = cf.createContext(JMSContext.SESSION_TRANSACTED)) {
 			JMSProducer producer = jmsContext.createProducer();
 			producer.send(requestQueue, "Message 1");
+			jmsContext.rollback();
+			producer.send(requestQueue, "Message 2");
+			jmsContext.commit();
+			
 		}
 	}
 }

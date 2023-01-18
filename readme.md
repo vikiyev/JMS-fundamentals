@@ -825,3 +825,24 @@ public class MessageConsumer {
 ```
 
 ## JMS Transactions
+
+Using **SESSION_TRANSACTED**, we can enable transactions on the producer or consumer side. This tells the JMS Server that all sends or receives will fall into a single transaction on a cache until we issue a commit from the producer. If a rollback is issued, all the messages in the cache will be discarded. The SESSION_TRANSACTED can be used both on the producer and consumer side.
+
+```java
+public class MessageProducer {
+	public static void main(String[] args) throws NamingException, JMSException, InterruptedException {
+		InitialContext initialContext = new InitialContext();
+		Queue requestQueue = (Queue) initialContext.lookup("queue/requestQueue");
+
+		try (ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory();
+				JMSContext jmsContext = cf.createContext(JMSContext.SESSION_TRANSACTED)) {
+			JMSProducer producer = jmsContext.createProducer();
+			producer.send(requestQueue, "Message 1");
+			jmsContext.rollback();
+			producer.send(requestQueue, "Message 2");
+			jmsContext.commit();
+
+		}
+	}
+}
+```
