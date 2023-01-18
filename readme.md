@@ -4,6 +4,7 @@ Based on Bharath Thippireddy's Udemy course [JMS Fundamentals](https://www.udemy
 
 - [JMS Fundamentals](#jms-fundamentals)
   - [Installing the Broker](#installing-the-broker)
+  - [WildFly installation](#wildfly-installation)
   - [Terminologies](#terminologies)
     - [Messaging](#messaging)
     - [Messaging Server](#messaging-server)
@@ -37,10 +38,42 @@ Based on Bharath Thippireddy's Udemy course [JMS Fundamentals](https://www.udemy
   - [JMS Transactions](#jms-transactions)
   - [Security](#security)
   - [Message Grouping](#message-grouping)
+  - [JavaEE](#javaee)
+    - [Creating the Producer](#creating-the-producer)
+    - [Creating the Servlet](#creating-the-servlet)
+    - [Creating the MDB](#creating-the-mdb)
+    - [Deployment](#deployment)
 
 ## Installing the Broker
 
 After Apache ActiveMQ Artemis is downloaded, we run `artemis create pathTo/mybroker`. To run the broker, use `artemis run`. This starts the broker at port 8161. The etc/broker.xml is the configuration file.
+
+## WildFly installation
+
+The `/bin` directory contains all the binaries to be run. The `standalone` folder runs a full fledged standalone server. The `deployments` folder will be where the WAR files be hosted. We can start a standalone server using
+
+```bash
+standalone.bat -c standalone-full.xml
+```
+
+The configuration will be automatically picked up by WildFly. We can connect to the JBoss shell using
+
+```bash
+jboss-cli.bat
+connect
+```
+
+Then we add a JMS queue named myQueue with a JDNI name queue/myQueue and java:jboss/exported/jms/queue/myQueue. The jboss/exported/jms is automatically added by JBoss when creating queues using the admin console. At runtime, we simply use queue/myQueue
+
+```bash
+jms-queue add --queue-address=myQueue --entries=queue/myQueue,java:jboss/exported/jms/queue/myQueue
+```
+
+To check if the queue was successfully created:
+
+```bash
+/subsystem=messaging-activemq/server=default/jms-queue=myQueue:read-resource
+```
 
 ## Terminologies
 
@@ -977,4 +1010,120 @@ We can then start creating consumers. All messages should be consumed by only on
 			Map<String, String> receivedMessages = new ConcurrentHashMap<>();
 			consumer1.setMessageListener(new MyListener("Consumer-1", receivedMessages));
 			consumer2.setMessageListener(new MyListener("Consumer-2", receivedMessages));
+```
+
+## JavaEE
+
+In this section, we will use JMS inside a JavaEE web application to be deployed on JBoss wildfly. EJB provides us with Message Driven Beans (MDB) which can run asynchronously.
+
+We can then proceed with the following steps:
+
+1. Create maven project (maven-archetype-webapp)
+2. Create the producer
+3. Create servlet
+4. Create MDB
+5. Deploy and run app
+
+### Creating the Producer
+
+The project will be a maven-archetype-webapp with the javaee-api dependency. For the message producer, we create a stateless session bean. We can automatically inject myQueue using the **@Resource** annotation. The **@Inject** annotation tells the java ee server to create a jmsContext.
+
+```java
+@Stateless
+@LocalBean
+public class MyMessageProducer {
+	// inject queue
+	@Resource(mappedName = "java:/queue/myQueue")
+	Queue myQueue;
+
+	@Inject
+	JMSContext jmsContext;
+
+	public void sendMessage(String message) {
+		jmsContext.createProducer().send(myQueue, message);
+	}
+}
+```
+
+### Creating the Servlet
+
+The Servlet sohuld extend the HttpServlet clas where we override the doGet() method. We start by injecting the producer with **@EJB**. The application server will automatically create the instance at runtime and inject the bean. The servlet can be mapped to a URL using **@WebServlet**
+
+```java
+@WebServlet(urlPatterns = "/")
+public class MyServlet extends HttpServlet {
+	private static final long serialVersionUID = 1L;
+	@EJB
+	MyMessageProducer producer;
+
+	@Override
+	protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+		String message = "Hello Doge!";
+		producer.sendMessage(message);
+		resp.getWriter().write("Published the message: " + message);
+	}
+}
+```
+
+### Creating the MDB
+
+The MDB will be consuming messages from the queue. This bean should implement MessageListener.
+
+```java
+@MessageDriven(name = "MyMdb", activationConfig = {
+		@ActivationConfigProperty(propertyName = "destination", propertyValue = "queue/myQueue"),
+		@ActivationConfigProperty(propertyName = "destinationType", propertyValue = "javax.jms.Queue"),
+		@ActivationConfigProperty(propertyName = "acknowledgeMode", propertyValue = "Auto-acknowledge"),
+})
+public class MyMdb implements MessageListener {
+	private static Logger LOGGER = Logger.getLogger(MyMdb.class.toString());
+
+	@Override
+	public void onMessage(Message message) {
+		if (message instanceof TextMessage) {
+			try {
+				// typecast and get the message
+				String text = ((TextMessage) message).getText();
+				LOGGER.info("Received message is: " + text);
+			} catch (JMSException e) {
+				e.printStackTrace();
+			}
+		}
+	}
+}
+```
+
+### Deployment
+
+To be able to deploy, we need to add the following properties to pom.xml
+
+```xml
+	<properties>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<maven.compiler.source>1.8</maven.compiler.source>
+		<maven.compiler.target>1.8</maven.compiler.target>
+		<failOnMissingWebXml>false</failOnMissingWebXml>
+	</properties>
+```
+
+We also need to add a maven WAR plugin
+
+```xml
+				<plugin>
+					<artifactId>maven-war-plugin</artifactId>
+					<version>3.2.2</version>
+				</plugin>
+```
+
+We can then proceed on building a WAR file.
+
+```
+maven clean
+maven install
+```
+
+We can then move the WAR file into the `standalone/deployments` directory of Wildfly. To start the server, we run
+
+```bash
+standalone.bat -c standalone-full.xml
 ```
