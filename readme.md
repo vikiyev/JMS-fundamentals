@@ -2,7 +2,12 @@
 
 Based on Bharath Thippireddy's Udemy course [JMS Fundamentals](https://www.udemy.com/course/java-message-service-jms-fundamentals/)
 
+# Completion Certificate
+
+![Completion Certificate](UC-140af89b-f405-4d07-b195-38fc7b3ebebe.jpg)
+
 - [JMS Fundamentals](#jms-fundamentals)
+- [Completion Certificate](#completion-certificate)
   - [Installing the Broker](#installing-the-broker)
   - [WildFly installation](#wildfly-installation)
   - [Spring JMS](#spring-jms)
