@@ -36,6 +36,7 @@ Based on Bharath Thippireddy's Udemy course [JMS Fundamentals](https://www.udemy
     - [CLIENT\_ACKNOWLEDGE](#client_acknowledge)
   - [JMS Transactions](#jms-transactions)
   - [Security](#security)
+  - [Message Grouping](#message-grouping)
 
 ## Installing the Broker
 
@@ -898,19 +899,6 @@ We then configure the security in the broker.xml file. We can create a pattern f
             <!-- we need this otherwise ./artemis data imp wouldn't work -->
             <permission type="manage" roles="amq"/>
          </security-setting>
-         <security-setting match="#">
-            <permission type="createNonDurableQueue" roles="amq"/>
-            <permission type="deleteNonDurableQueue" roles="amq"/>
-            <permission type="createDurableQueue" roles="amq"/>
-            <permission type="deleteDurableQueue" roles="amq"/>
-            <permission type="createAddress" roles="amq"/>
-            <permission type="deleteAddress" roles="amq"/>
-            <permission type="consume" roles="amq"/>
-            <permission type="browse" roles="amq"/>
-            <permission type="send" roles="amq"/>
-            <!-- we need this otherwise ./artemis data imp wouldn't work -->
-            <permission type="manage" roles="amq"/>
-         </security-setting>
       </security-settings>
 ```
 
@@ -922,4 +910,71 @@ try (ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory();
 
 try (ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory();
 				JMSContext jmsContext = cf.createContext("clinicaluser", "clinicalpass")) {
+```
+
+## Message Grouping
+
+JMS allows us to set a GroupID property on the message to ensure that all messages with a particular GroupID are forwarded to a single consumer. We can create a multiple messages with each message having the same JMSXGroupID
+
+```java
+public class MessageGroupingDemo {
+	public static void main(String[] args) throws NamingException, JMSException {
+		InitialContext context = new InitialContext();
+		Queue queue = (Queue) context.lookup("queue/myQueue");
+
+		//create jms context
+		try (ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory();
+				JMSContext jmsContext = cf.createContext()) {
+			JMSProducer producer = jmsContext.createProducer();
+
+			// send multiple messages
+			int count = 10;
+			TextMessage[] messages = new TextMessage[count];
+			for (int i = 0; i < count; i++) {
+				messages[i] = jmsContext.createTextMessage("Group-0 message" + i);
+				messages[i].setStringProperty("JMSXGroupID", "Group-0");
+
+        producer.send(queue, messages[i]);
+			}
+		}
+	}
+}
+
+```
+
+We then create an asynchronous listener where we create a Map of the received messages. The key is the message itself and the value will be the listener name.
+
+```java
+	class MyListener implements MessageListener {
+		private final String name;
+		private final Map<String, String> receivedMessages; // message, listener
+
+		public MyListener(String name, Map<String, String> receivedMessages) {
+			this.name = name;
+			this.receivedMessages = receivedMessages;
+		}
+
+		@Override
+		public void onMessage(Message message) {
+			// process messages
+			TextMessage textMessage = (TextMessage) message;
+			try {
+				System.out.println("Message received is: " + textMessage.getText());
+				System.out.println("Listener Name: " + name);
+				receivedMessages.put(textMessage.getText(), name);
+			} catch (JMSException e) {
+				e.printStackTrace();
+			}
+		}
+	}
+```
+
+We can then start creating consumers. All messages should be consumed by only one consumer.
+
+```java
+			JMSConsumer consumer1 = jmsContext2.createConsumer(queue);
+			JMSConsumer consumer2 = jmsContext2.createConsumer(queue);
+			Map<String, String> receivedMessages = new ConcurrentHashMap<>();
+			consumer1.setMessageListener(new MyListener("Consumer-1", receivedMessages));
+			consumer2.setMessageListener(new MyListener("Consumer-2", receivedMessages));
 ```
